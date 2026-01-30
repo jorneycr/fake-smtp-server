@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - "!*"
+    tags:
+      - "*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'corretto'
+          java-version: 21
+
+      - name: Get version number
+        id: get_version
+        run: echo ::set-output name=APP_VERSION::${GITHUB_REF#refs/tags/}
+
+      - name: Build with Gradle
+        run: ./gradlew build jacocoTestReport sonarqube --info
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONARCLOUD_TOKEN }}
+
+      - name: Create Release Notes
+        id: release_notes
+        uses: heinrichreimer/github-changelog-generator-action@v2.4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: ${{ github.ref }}
+          body: ${{ steps.release_notes.outputs.changelog }}
+          draft: false
+          prerelease: false
+
+      - name: Upload application jar
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./build/libs/fake-smtp-server-${{ steps.get_version.outputs.APP_VERSION }}.jar
+          asset_name: fake-smtp-server-${{ steps.get_version.outputs.APP_VERSION }}.jar
+          asset_content_type: application/java-archive
+
+      - name: Upload sources jar
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./build/libs/fake-smtp-server-${{ steps.get_version.outputs.APP_VERSION }}-sources.jar
+          asset_name: fake-smtp-server-${{ steps.get_version.outputs.APP_VERSION }}-sources.jar
+          asset_content_type: application/java-archive
+
+      - name: Setup Login to DockerHub
+        run: |
+          sed -i 's/docker_hub_username/${{ secrets.DOCKERHUB_USERNAME }}/' ./gradle.properties
+          sed -i 's/docker_hub_token/${{ secrets.DOCKERHUB_TOKEN }}/' ./gradle.properties
+
+      - name: Build and Push docker images
+        run: ./gradlew jib
