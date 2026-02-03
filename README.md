@@ -213,3 +213,7 @@ sh/push-dev-image
 ### Change for SMC3 in the context
 
 	<Environment name="mail.hostserver" override="false" type="java.lang.String" value="localhost"/>
+
+### URL
+
+    http://localhost:8084/
